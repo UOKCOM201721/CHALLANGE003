@@ -48,13 +48,16 @@ class Client:
             self.main()
 
         leny = math.ceil(os.stat(filetosend).st_size)
+        if leny <= 0:
+            print("[Errono 5] Cannot send an empty file")
+            self.main()
         filelen = struct.pack("<I", leny)
         filenamelen = struct.pack("<I", len(filetosend))
         sock.sendall(filelen + filenamelen)
         sock.sendall(bytes(filetosend, 'utf-8'))
-        print('debug', len(filetosend))
-        print('debug2', len(filetosend), type(filetosend))
-        bufferx = 1024*1024
+        # print('debug', len(filetosend))
+        # print('debug2', len(filetosend), type(filetosend))
+        bufferx = 1024
         i = 0
         while True:
             data = f.read(bufferx)
@@ -63,6 +66,7 @@ class Client:
             if not data:
                 break
             i += bufferx
+        f.close()
         print()
         print('[' + colo.Fore.GREEN + " SUCCESS " + colo.Style.RESET_ALL + ']' + 'sent {%s}' % filetosend)
         self.main()
@@ -110,13 +114,22 @@ class Server:
     def bind(self, addr):
         sock = socket.socket()
         addresses = (addr, 40000)
-        sock.bind(addresses)
+        try:
+            sock.bind(addresses)
+        except OSError:
+            print('[Errno 98] (%s) Address already in use' % addr)
+            return
         print('[' + colo.Fore.GREEN + " OK " + colo.Style.RESET_ALL + ']' + ('Success bind to {%s}' % addr))
-        while True:
-            sock.listen(10)
-            c, addrinfo = sock.accept()
-            #print('[' + colo.Fore.GREEN + " CONNECT " + colo.Style.RESET_ALL + ']' + ('To {%s} ' % addrinfo[0]))
-            self.serverProcessing(c, addrinfo)
+        sock.listen(100)
+        try:
+            while True:
+                c, addrinfo = sock.accept()
+                #print('[' + colo.Fore.GREEN + " CONNECT " + colo.Style.RESET_ALL + ']' + ('To {%s} ' % addrinfo[0]))
+                t = th.Thread(target=self.serverProcessing, args=(c, addrinfo,))
+                t.start()
+        except KeyboardInterrupt:
+            sys.exit(1)
+
 
     def startServer(self):
         bindaddrs = self.getlocalip()
@@ -126,6 +139,7 @@ class Server:
 
     def serverProcessing(self, c, addrinfo):
         info = c.recv(8)
+        # print(info)
         filelen = struct.unpack("<I", info[:4])[0]
         filenamelen = struct.unpack("<I", info[4:])[0]
         filename = c.recv(filenamelen)
@@ -136,21 +150,27 @@ class Server:
         alldata = bytes('', 'utf-8')
         i = 0
         while i < filelen:
-            bufferx = 1024*1024
+            sys.stdout.flush()
+            bufferx = 1024
             data = c.recv(bufferx)
             file.write(data)
-            file.flush()
             i += bufferx
+        file.close()
+        c.close()
         #print()
         #print('[' + colo.Fore.GREEN + " OK " + colo.Style.RESET_ALL + ']' + 'complete')
         #Client().main()
 
 
 if __name__ == '__main__':
+
     t = th.Thread(target=Server().main)
-    t.daemon = True
+    # t.daemon = True
     t.start()
     time.sleep(1)
-    Client().main()
-
+    try:
+        Client().main()
+    except KeyboardInterrupt:
+        print("\nExiting with exit code[0]")
+        sys.exit()
 
